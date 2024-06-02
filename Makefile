@@ -1,6 +1,6 @@
 TARGET = nbodies
 
-CXX = g++
+CXX = mpic++
 CXXFLAGS = -Wall -Iinclude
 
 SRCDIR = src
