@@ -19,3 +19,20 @@ void Body::random_position(int max_x, int max_y) {
 	position[1] = dis(gen) * max_y;
 }
 
+void crearTipoMPIBody(MPI_Datatype& mpi_body_type) {
+    Body body;
+
+    int bloques = 4;
+    int longitudes[bloques] = {2, 2, 2, 1};
+
+    MPI_Aint desplazamientos[bloques];
+    desplazamientos[0] = offsetof(Body, position);
+    desplazamientos[1] = offsetof(Body, speed);
+    desplazamientos[2] = offsetof(Body, acceleration);
+    desplazamientos[3] = offsetof(Body, mass);
+
+    MPI_Datatype tipos[bloques] = {MPI_FLOAT, MPI_FLOAT, MPI_FLOAT, MPI_FLOAT};
+
+    MPI_Type_create_struct(bloques, longitudes, desplazamientos, tipos, &mpi_body_type);
+    MPI_Type_commit(&mpi_body_type);
+}
