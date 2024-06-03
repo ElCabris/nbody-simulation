@@ -7,17 +7,23 @@
 #include "body.hpp"
 #include <mpi.h>
 
+void operator+=(const std::array<float, 2>&, const std::array<float, 2>&);
+
+std::array<float, 2> operator+(const std::array<float, 2>&,
+                                const std::array<float, 2>&);
+
+std::array<float, 2> operator-(const std::array<float, 2>&,
+                               const std::array<float, 2>&);
+
+std::array<float, 2> operator*(const float&, const std::array<float, 2>&);
+
+// norm | magnitude | length of a vector
+float norm_of_a_vector(const std::array<float, 2>&);
+
+int distribute_bodies(int, int, int);
+
 constexpr float GRAVITATIONAL_CONSTANT = 6.67430e-11f;
-const float DELTA_T = 0.001f; // cosntante del paso del tiempo para el método de euler
-
-int distribute_bodies(int rank, int size, int number_bodies) {
-    
-    --size;
-	int div = number_bodies / size,
-	residuo = number_bodies % size;
-
-	return (residuo > 0 && rank <= residuo ? ++div : div);
-}
+const float DELTA_T = 0.001f; // constante del paso del tiempo para el método de euler
 
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
@@ -36,6 +42,11 @@ int main(int argc, char *argv[]) {
     MPI_Datatype mpi_body_type;
     crearTipoMPIBody(mpi_body_type);
 
+    // Comunicador de los procesos que hacen los cálculos (todos menos el 0)
+    MPI_Comm calculators;
+    int color = rank == 0 ? 1 : 0;
+    MPI_Comm_split(MPI_COMM_WORLD, color, rank, &calculators);
+
     if (rank == 0) {
         // Crear los cuerpos y ponerlos en posiciones aleatorias dentro del espacio
         for (auto& body : bodies) {
@@ -47,26 +58,48 @@ int main(int argc, char *argv[]) {
     // Difundir los cuerpos desde el proceso 0 a todos los demás procesos
     MPI_Bcast(bodies.data(), number_bodies, mpi_body_type, 0, MPI_COMM_WORLD);
 
-    if (rank == 0) {
+    // Calcular la distribución de cuerpos para cada proceso
+    std::vector<int> elemen_distribution(size - 1);
+    std::vector<int> index_distribution(size - 1);
+    for (int i = 1; i < size; i++) {
+        elemen_distribution[i - 1] = distribute_bodies(i, size, number_bodies);
+    }
+    index_distribution[0] = 0;
+    for (int i = 1; i < size - 1; i++) {
+        index_distribution[i] = elemen_distribution[i - 1] + index_distribution[i - 1];
+    }
 
-		const int radius = 5;
+    // Calcula la distribución para cada proceso
+    int local_count = distribute_bodies(rank, size, number_bodies);
+    int local_start = (rank == 0) ? 0 : index_distribution[rank - 1];
+
+    std::vector<int> recvcounts(size);
+    std::vector<int> displs(size);
+    recvcounts[0] = local_count;
+    displs[0] = 0;
+
+    for (int i = 1; i < size; i++) {
+        recvcounts[i] = elemen_distribution[i - 1];
+        displs[i] = index_distribution[i - 1];
+    }
+
+    if (rank == 0) {
+        const int radius = 5;
         sf::RenderWindow window(sf::VideoMode(width, height), "n-Bodies");
 
         std::vector<sf::CircleShape> circles(number_bodies);
 
-		for (std::vector<sf::CircleShape>::iterator it = circles.begin();
-			 it != circles.end(); it++) {
+        for (auto& circle : circles) {
+            circle = sf::CircleShape(radius);
 
-			*it = sf::CircleShape(radius);
-
-			// Generar colores aleatorios
+            // Generar colores aleatorios
             std::random_device rd;
             std::mt19937 gen(rd());
             std::uniform_int_distribution<int> dist(0, 255);
-			sf::Color random_color(dist(gen), dist(gen), dist(gen)); // r, g, b
+            sf::Color random_color(dist(gen), dist(gen), dist(gen)); // r, g, b
 
-			it->setFillColor(random_color);
-		}
+            circle.setFillColor(random_color);
+        }
 
         while (window.isOpen()) {
             sf::Event event;
@@ -77,77 +110,85 @@ int main(int argc, char *argv[]) {
 
             window.clear(sf::Color::Black);
 
-			for (int i = 0; i < number_bodies; i++) {
-				circles[i].setPosition(bodies[i].position[0], bodies[i].position[1]);
-				window.draw(circles[i]);
-			}
+            for (int i = 0; i < number_bodies; ++i) {
+                /*
+                el origen, para graficar en sfml (y la mayoría de librerias graficas), se encuentra
+                en la parte superior izquierda, las 'x' aumentan a la derecha y las 'y' aumentan hacia
+                abajo, por lo tanto la formula para pasar las coordenadas cartesianas (en el primer cuadrante)
+                sería:
+                    cartesianas -> sfml = (x, y) -> (x, height - y)
+                */
+                circles[i].setPosition(bodies[i].position[0], height - bodies[i].position[1]);
+                window.draw(circles[i]);
+            }
 
             window.display();
         }
+    } else {
+        while (true) {
+
+            // Realizar cálculos para los cuerpos asignados al proceso
+            for (int i = local_start; i < local_start + local_count; ++i) {
+                // sum_forces_i representa la fuerza que experimienta el cuerpo i
+                // con respecto a las demás cuerpos
+                std::array<float, 2> sum_foces_i = {0, 0};
+                for (int j = 0; j < number_bodies; ++j) {
+                    if (j == i) {
+                        continue;
+                    }
+
+                    // vector_distancia es representa el vector r_j - r_i
+                    std::array<float, 2> vector_distancia = bodies[j].position - bodies[i].position;
+                    // norma_distancia es el módulo del vector distancia 
+                    float norma_distancia =  norm_of_a_vector(vector_distancia);
+
+                    // f_ij representa la fuerza entre pares de cuerpos
+                    std::array<float, 2> f_ij = (GRAVITATIONAL_CONSTANT * bodies[i].mass * bodies[j].mass * static_cast<float>(std::pow(norma_distancia, -3))) * vector_distancia;
+                    sum_foces_i += f_ij;
+                }
+
+                bodies[i].acceleration = static_cast<float>(std::pow(bodies[i].mass, -1)) * sum_foces_i;
+                bodies[i].speed += DELTA_T * bodies[i].acceleration;
+                bodies[i].position += DELTA_T * bodies[i].speed;
+
+                MPI_Barrier(calculators);
+            }
+        }
     }
-	else {
-		int elemen_distribution[size - 1],
-		index_distribution[size - 1];
-
-		// definir cuantos elementos le tocan a cada proceso
-		for (int i = 1; i < size; i++) {
-			elemen_distribution[i - 1] = distribute_bodies(i, size, number_bodies);
-		}
-
-		// determinar desde que indice parte cada proceso
-		index_distribution[0] = 0;
-		for (int i = 1; i < size; i++) {
-			index_distribution[i] += elemen_distribution[i - 1] + index_distribution[i - 1];
-		}
-
-		for (int i = index_distribution[rank - 1];
-		i < (index_distribution[rank - 1] + elemen_distribution[rank - 1]); i++) {
-			
-			// los siguientes cálculos son para i con respecto a j
-			for (int j = 0; j < number_bodies; j++)  {
-				if (j == i) {
-					continue;
-				}
-
-				// calcular la distancia entre el cuerpo i y j (|rj - ri|)
-				float distancia = std::fabs(std::pow(bodies[j].position[0] - bodies[i].position[0], 2)
-								+ std::pow(bodies[j].position[1] - bodies[i].position[1], 2));
-				
-
-				// con la distancia calculada ahora se puede agregar el kutof (o como se llame)
-				// no es más que agregar un if
-
-				// aceleración para el cuerpo en el proximo instante de tiempo es:
-
-				/*
-				F_ij = G(m_i)(m_j) (r_j-r_i) / |r_j - r_i|^3 = m*a -> (masa * aceleracion) despejando acelearcion tenemos:
-
-				aceleracion = (G(m_j) / |r_j - r_i|^3) * (r_j - r_i)
-				*/
-
-				bodies[i].acceleration = {
-					GRAVITATIONAL_CONSTANT * bodies[j].mass * static_cast<float>(std::pow(distancia, -3))
-					* (bodies[j].position[0] - bodies[i].position[0]),
-					GRAVITATIONAL_CONSTANT * bodies[j].mass * static_cast<float>(std::pow(distancia, -3))
-					* (bodies[j].position[1] - bodies[i].position[1]) 
-				};
-
-				bodies[i].speed = {
-					bodies[i].speed[0] + bodies[i].acceleration[0] * DELTA_T,
-					bodies[i].speed[1] + bodies[i].acceleration[1] * DELTA_T
-				};
-
-				bodies[i].position = {
-					bodies[i].position[0] + bodies[i].speed[0] * DELTA_T,
-					bodies[i].position[1] + bodies[i].speed[1] * DELTA_T
-				};
-
-
-			}
-		}
-	}
-
+    MPI_Comm_free(&calculators);
     MPI_Type_free(&mpi_body_type);
     MPI_Finalize();
     return 0;
+}
+
+void operator+=(std::array<float, 2>& v1, const std::array<float, 2>& v2) {
+    v1[0] += v2[0];
+    v1[1] += v2[0];
+}
+
+std::array<float, 2> operator+(const std::array<float, 2>& v1,
+                               const std::array<float, 2>& v2) {
+    return {v1[0] + v2[0], v1[1] + v2[1]};
+}
+
+std::array<float, 2> operator-(const std::array<float, 2>& v1,
+                               const std::array<float, 2>& v2) {
+    return {v1[0] + v2[0], v1[1] + v2[1]};
+}
+
+std::array<float, 2> operator*(const float& n, const std::array<float, 2>& v) {
+    return {n * v[0], n * v[1]};
+}
+
+
+float norm_of_a_vector(const std::array<float, 2>& v) {
+    return static_cast<float>(std::pow(std::pow(v[0], 2) + std::pow(v[1], 2), 0.5));
+}
+
+int distribute_bodies(int rank, int size, int number_bodies) {
+    --size;
+    int div = number_bodies / size;
+    int residuo = number_bodies % size;
+
+    return (residuo > 0 && rank <= residuo ? ++div : div);
 }
