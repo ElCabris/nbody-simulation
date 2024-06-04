@@ -5,13 +5,13 @@
 #include <mpi.h>
 
 struct Body{
-	std::array<float, 2> position; // (x, y)
-	std::array<float, 2> speed; // (x, y)
-	std::array<float, 2> acceleration;
-	float mass;
+	std::array<double , 2> position; // (x, y)
+	std::array<double , 2> velocity; // (x, y)
+	std::array<double , 2> acceleration;
+	double  mass;
 
 	Body();
-	Body(std::array<float, 2>, std::array<float, 2>, std::array<float, 2>, float);
+	Body(std::array<double , 2>, std::array<double , 2>, std::array<double , 2>, double );
 	/* función para poner la posición inicial del cuerpo de pendiendo
 	del tamño máximo en 'x' y en 'y'
 	*/

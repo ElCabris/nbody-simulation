@@ -5,17 +5,13 @@
 #include <cmath>
 #include <SFML/Graphics.hpp>
 #include "body.hpp"
+#include "vectors_operations.hpp"
 #include <mpi.h>
 
-void operator+=(std::array<float, 2>&, const std::array<float, 2>&);
-std::array<float, 2> operator+(const std::array<float, 2>&, const std::array<float, 2>&);
-std::array<float, 2> operator-(const std::array<float, 2>&, const std::array<float, 2>&);
-std::array<float, 2> operator*(const float&, const std::array<float, 2>&);
-float norm_of_a_vector(const std::array<float, 2>&);
 int distribute_bodies(int, int, int);
 
-constexpr float GRAVITATIONAL_CONSTANT = 6.67430e-11f;
-const float DELTA_T = 0.001f;
+constexpr double GRAVITATIONAL_CONSTANT = 6.67430e-11f;
+const double DELTA_T = 0.001f;
 
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
@@ -43,20 +39,6 @@ int main(int argc, char *argv[]) {
 
     MPI_Bcast(bodies.data(), number_bodies, mpi_body_type, 0, MPI_COMM_WORLD);
 
-    std::vector<int> elemen_distribution(size - 1);
-    std::vector<int> index_distribution(size - 1);
-
-    for (int i = 1; i < size; i++) {
-        elemen_distribution[i - 1] = distribute_bodies(i, size, number_bodies);
-    }
-    index_distribution[0] = 0;
-    for (int i = 1; i < size - 1; i++) {
-        index_distribution[i] = elemen_distribution[i - 1] + index_distribution[i - 1];
-    }
-
-    int local_count = distribute_bodies(rank, size, number_bodies);
-    int local_start = (rank == 0) ? 0 : index_distribution[rank - 1];
-
     if (rank == 0) {
         const int radius = 5;
         sf::RenderWindow window(sf::VideoMode(width, height), "n-Bodies");
@@ -75,7 +57,7 @@ int main(int argc, char *argv[]) {
             sf::Event event;
             while (window.pollEvent(event)) {
                 if (event.type == sf::Event::Closed)
-                    window.close();
+                   window.close();
             }
 
             MPI_Recv(bodies.data(), bodies.size(), mpi_body_type, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -90,29 +72,46 @@ int main(int argc, char *argv[]) {
             sf::sleep(sf::seconds(0.5));
         }
     } else {
+        // element_distribution 
+        std::vector<int> element_distribution(size - 1);
+        std::vector<int> index_distribution(size - 1);
+
+        for (int i = 1; i < size; i++) {
+            element_distribution[i - 1] = distribute_bodies(i, size, number_bodies);
+        }
+        index_distribution[0] = 0;
+        for (int i = 1; i < size - 1; i++) {
+            index_distribution[i] = element_distribution[i - 1] + index_distribution[i - 1];
+        }
+
+        std::cout << "rank " << rank << ": " << index_distribution[rank - 1] << " -> " << index_distribution[rank - 1] + element_distribution[rank - 1] << std::endl;
         while (true) {
-            std::cout << rank << " calculando" << std::endl;
-            for (int i = local_start; i < local_start + local_count; ++i) {
-                std::array<float, 2> sum_foces_i = {0, 0};
+            for (int i = index_distribution[rank - 1]; i < index_distribution[rank - 1] + element_distribution[rank - 1]; ++i) {
+                std::array<double, 2> sum_foces_i = {0, 0};
                 for (int j = 0; j < number_bodies; ++j) {
                     if (j == i) {
                         continue;
                     }
 
-                    std::array<float, 2> vector_distancia = bodies[j].position - bodies[i].position;
-                    float norma_distancia = norm_of_a_vector(vector_distancia);
-                    std::array<float, 2> f_ij = (GRAVITATIONAL_CONSTANT * bodies[i].mass * bodies[j].mass * static_cast<float>(std::pow(norma_distancia, -3))) * vector_distancia;
+                    std::array<double, 2> vector_distancia = bodies[j].position - bodies[i].position;
+                    double norma_distancia = norm_of_a_vector(vector_distancia);
+                    std::array<double, 2> f_ij = (GRAVITATIONAL_CONSTANT * bodies[i].mass * bodies[j].mass * std::pow(norma_distancia, -3)) * vector_distancia;
                     sum_foces_i += f_ij;
                 }
 
-                bodies[i].acceleration = static_cast<float>(std::pow(bodies[i].mass, -1)) * sum_foces_i;
-                bodies[i].speed += DELTA_T * bodies[i].acceleration;
-                bodies[i].position += DELTA_T * bodies[i].speed;
+                bodies[i].acceleration = std::pow(bodies[i].mass, -1) * sum_foces_i;
+                bodies[i].velocity += DELTA_T * bodies[i].acceleration;
+                bodies[i].position += DELTA_T * bodies[i].velocity;
             }
             MPI_Barrier(calculators);
 
-            MPI_Allgatherv(MPI_IN_PLACE, local_count, mpi_body_type, 
-                        bodies.data(), elemen_distribution.data(), index_distribution.data(), 
+            std::cout << rank << std::endl;
+            for (auto it : bodies) {
+                std::cout << '{' << it.position[0] << ", " << it.position[1] << '}' << ' ';
+            }
+
+            MPI_Allgatherv(MPI_IN_PLACE, element_distribution[rank - 1], mpi_body_type, 
+                        bodies.data(), element_distribution.data(), index_distribution.data(), 
                         mpi_body_type, calculators);
 
             if (rank == 1) {
@@ -124,27 +123,6 @@ int main(int argc, char *argv[]) {
     MPI_Type_free(&mpi_body_type);
     MPI_Finalize();
     return 0;
-}
-
-void operator+=(std::array<float, 2>& v1, const std::array<float, 2>& v2) {
-    v1[0] += v2[0];
-    v1[1] += v2[1];
-}
-
-std::array<float, 2> operator+(const std::array<float, 2>& v1, const std::array<float, 2>& v2) {
-    return {v1[0] + v2[0], v1[1] + v2[1]};
-}
-
-std::array<float, 2> operator-(const std::array<float, 2>& v1, const std::array<float, 2>& v2) {
-    return {v1[0] - v2[0], v1[1] - v2[1]};
-}
-
-std::array<float, 2> operator*(const float& n, const std::array<float, 2>& v) {
-    return {n * v[0], n * v[1]};
-}
-
-float norm_of_a_vector(const std::array<float, 2>& v) {
-    return static_cast<float>(std::sqrt(v[0] * v[0] + v[1] * v[1]));
 }
 
 int distribute_bodies(int rank, int size, int number_bodies) {
