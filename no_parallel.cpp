@@ -2,12 +2,12 @@
 
 #include <SFML/Graphics.hpp>
 #include <iostream>
-#include "../include/body.hpp"
-#include "../include/vectors_operations.hpp"
+#include "include/body.hpp"
+#include "include/vectors_operations.hpp"
 #include <random>
 #include <array>
 
-const int number_bodies = 1000;
+const int number_bodies = 20;
 constexpr double GRAVITATIONAL_CONSTANT = 6.67430e-11;
 const double DELTA_T = 0.001;
 
@@ -15,7 +15,7 @@ void calcular(std::array<Body, number_bodies>&);
 
 int main() {
     const int width = 500, height = 500;
-    const float radius = 0.3;
+    const float radius = 20;
     std::array<Body, number_bodies> bodies;
 
     for (std::array<Body, number_bodies>::iterator it = bodies.begin(); it != bodies.end(); it++) {
