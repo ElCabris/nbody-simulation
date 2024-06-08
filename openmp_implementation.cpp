@@ -6,23 +6,25 @@
 #include "include/vectors_operations.hpp"
 #include <random>
 #include <array>
+#include <omp.h>
 
-const int number_bodies = 20;
-constexpr double GRAVITATIONAL_CONSTANT = 6.67430e-11;
-const double DELTA_T = 0.001;
+const int number_bodies = 5000;
+constexpr double GRAVITATIONAL_CONSTANT = 1;
+const double DELTA_T = 0.0001;
+const double CUTTOF = 100;
 
 void calcular(std::array<Body, number_bodies>&);
 
 int main() {
-    const int width = 500, height = 500;
-    const float radius = 20;
+    const int width = 1800, height = 900;
+    const float radius = 2;
     std::array<Body, number_bodies> bodies;
 
     for (std::array<Body, number_bodies>::iterator it = bodies.begin(); it != bodies.end(); it++) {
         *it = Body();
         it->random_position(width, height);
     }
-    
+
     sf::RenderWindow window(sf::VideoMode(width, height), "n-Bodies");
     std::array<sf::CircleShape, number_bodies> circles;
 
@@ -41,15 +43,17 @@ int main() {
             if (event.type == sf::Event::Closed)
                 window.close();
         }
+	
 
         window.clear(sf::Color::Black);
         calcular(bodies);
+	
+//	for (auto it : bodies) {
+//		std::cout << '{' << it.position[0] << ", "  << it.position[1] << '}' << std::endl;
+//	}
+//	std::cout << std::endl;
 
-        for (auto it : bodies) {
-            std::cout << '{'<< it.position[0] << ", " << it.position[1] << '}' << std::endl;
-        }
-        std::cout << std::endl;
-
+	#pragma mp parallel for 
         for (int i = 0; i < number_bodies; ++i) {
             circles[i].setPosition(bodies[i].position[0], height - bodies[i].position[1]);
             window.draw(circles[i]);
@@ -60,7 +64,7 @@ int main() {
 }
 
 void calcular(std::array<Body, number_bodies>& bodies) {
-    
+    #pragma omp parallel for 
     for (int i = 0; i < number_bodies; i++) {
         std::array<double, 2> sum_forces_i = {0, 0};
         for (int j = 0; j < number_bodies; j++) {
@@ -69,7 +73,11 @@ void calcular(std::array<Body, number_bodies>& bodies) {
             
             std::array<double, 2> vector_distancia = bodies[j].position - bodies[i].position;
             double norma_distancia = norm_of_a_vector(vector_distancia);
-            std::array<double , 2> f_ij = (GRAVITATIONAL_CONSTANT * bodies[i].mass * bodies[j].mass * std::pow(norma_distancia, -3)) * vector_distancia;
+            
+	    if (norma_distancia > CUTTOF)
+		    continue;
+
+	    std::array<double , 2> f_ij = 1 * (GRAVITATIONAL_CONSTANT * bodies[i].mass * bodies[j].mass * std::pow(norma_distancia + 10, -3)) * vector_distancia;
             sum_forces_i += f_ij;
         }
 
