@@ -2,7 +2,7 @@
 #define BODY_HPP
 
 #include <array>
-#include <mpi.h>
+//#include <mpi.h>
 
 struct Body{
 	std::array<double , 2> position; // (x, y)
@@ -18,6 +18,6 @@ struct Body{
 	void random_position(int, int);
 };
 
-void crearTipoMPIBody(MPI_Datatype&);
+//void crearTipoMPIBody(MPI_Datatype&);
 
 #endif

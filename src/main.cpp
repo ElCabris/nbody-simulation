@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
                    window.close();
             }
 
-            MPI_Recv(bodies.data(), bodies.size(), mpi_body_type, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+             MPI_Recv(bodies.data(), bodies.size(), mpi_body_type, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             window.clear(sf::Color::Black);
 
             for (int i = 0; i < number_bodies; ++i) {
@@ -84,7 +84,6 @@ int main(int argc, char *argv[]) {
             index_distribution[i] = element_distribution[i - 1] + index_distribution[i - 1];
         }
 
-        std::cout << "rank " << rank << ": " << index_distribution[rank - 1] << " -> " << index_distribution[rank - 1] + element_distribution[rank - 1] << std::endl;
         while (true) {
             for (int i = index_distribution[rank - 1]; i < index_distribution[rank - 1] + element_distribution[rank - 1]; ++i) {
                 std::array<double, 2> sum_foces_i = {0, 0};
@@ -104,11 +103,6 @@ int main(int argc, char *argv[]) {
                 bodies[i].position += DELTA_T * bodies[i].velocity;
             }
             MPI_Barrier(calculators);
-
-            std::cout << rank << std::endl;
-            for (auto it : bodies) {
-                std::cout << '{' << it.position[0] << ", " << it.position[1] << '}' << ' ';
-            }
 
             MPI_Allgatherv(MPI_IN_PLACE, element_distribution[rank - 1], mpi_body_type, 
                         bodies.data(), element_distribution.data(), index_distribution.data(), 

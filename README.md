@@ -1,9 +1,14 @@
 # nbody-simulation
 
-Para esta simulación de $n$ cuerpos se implementa mpi.
+**Para ejecutar este programa es necesario tener instalado la libreria sfml**
+Para instalar sfml en sistemas basados en debian es suficiente ejecutando el siguiente comando
+```
+sudo apt install libsfml-devwo
+```
 
-## Distribución de procesos
-La siguiente es la distribución de los procesos en el programa
+la implementación con mpi fracasó.
 
-### Proceso Master (proceso 0)
-Este proceso se va a encargar únicamente de graficar los elementos
+Para compilar y ejecutar el programa
+```
+g++ -fopenmp openmp_implementation.cpp src/models/body.cpp src/models/vectors_operations.cpp -lsfml-graphics -lsfml-window -lsfml-system
+```
