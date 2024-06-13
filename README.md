@@ -3,7 +3,7 @@
 **Para ejecutar este programa es necesario tener instalado la libreria sfml**
 Para instalar sfml en sistemas basados en debian es suficiente ejecutando el siguiente comando
 ```
-sudo apt install libsfml-devwo
+sudo apt install libsfml-dev
 ```
 
 la implementación con mpi fracasó.
