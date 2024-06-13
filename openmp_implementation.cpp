@@ -12,11 +12,11 @@ const int number_bodies = 20;
 constexpr double GRAVITATIONAL_CONSTANT = 1;
 const double DELTA_T = 0.0001;
 const double CUTTOF = 1000000;
+const int width = 500, height = 500;
 
 void calcular(std::array<Body, number_bodies>&);
 
 int main() {
-    const int width = 500, height = 500;
     const float radius = 2;
     std::array<Body, number_bodies> bodies;
 
