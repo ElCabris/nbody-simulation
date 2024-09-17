@@ -1,128 +1,87 @@
-#include <vector>
-#include <iostream>
-#include <random>
-#include <string>
-#include <cmath>
+// para compilar este programa es necesario primero comentar las partes mpi de los modulos
+
 #include <SFML/Graphics.hpp>
-#include "body.hpp"
-#include "vectors_operations.hpp"
-#include <mpi.h>
+#include "../include/body.hpp"
+#include "../include/vectors_operations.hpp"
+#include <random>
+#include <array>
+#include <omp.h>
 
-int distribute_bodies(int, int, int);
+const int number_bodies = 20;
+constexpr double GRAVITATIONAL_CONSTANT = 1;
+const double DELTA_T = 0.0001;
+const double CUTTOF = 1000000;
+const int width = 500, height = 500;
 
-constexpr double GRAVITATIONAL_CONSTANT = 6.67430e-11f;
-const double DELTA_T = 0.001f;
+void calcular(std::array<Body, number_bodies>&);
 
-int main(int argc, char *argv[]) {
-    MPI_Init(&argc, &argv);
+int main() {
+    const float radius = 2;
+    std::array<Body, number_bodies> bodies;
 
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    int height = std::stoi(argv[2]), width = std::stoi(argv[1]), number_bodies = std::stoi(argv[3]);
-    std::vector<Body> bodies(number_bodies);
-
-    MPI_Datatype mpi_body_type;
-    crearTipoMPIBody(mpi_body_type);
-
-    MPI_Comm calculators;
-    int color = rank == 0 ? 1 : 0;
-    MPI_Comm_split(MPI_COMM_WORLD, color, rank, &calculators);
-
-    if (rank == 0) {
-        for (auto& body : bodies) {
-            body = Body();
-            body.random_position(width, height);
-        }
+    for (std::array<Body, number_bodies>::iterator it = bodies.begin(); it != bodies.end(); it++) {
+        *it = Body();
+        it->random_position(width, height);
     }
 
-    MPI_Bcast(bodies.data(), number_bodies, mpi_body_type, 0, MPI_COMM_WORLD);
+    sf::RenderWindow window(sf::VideoMode(width, height), "n-Bodies");
+    std::array<sf::CircleShape, number_bodies> circles;
 
-    if (rank == 0) {
-        const int radius = 5;
-        sf::RenderWindow window(sf::VideoMode(width, height), "n-Bodies");
-        std::vector<sf::CircleShape> circles(number_bodies);
-
-        for (auto& circle : circles) {
-            circle = sf::CircleShape(radius);
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::uniform_int_distribution<int> dist(0, 255);
-            sf::Color random_color(dist(gen), dist(gen), dist(gen));
-            circle.setFillColor(random_color);
-        }
-
-        while (window.isOpen()) {
-            sf::Event event;
-            while (window.pollEvent(event)) {
-                if (event.type == sf::Event::Closed)
-                   window.close();
-            }
-
-             MPI_Recv(bodies.data(), bodies.size(), mpi_body_type, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            window.clear(sf::Color::Black);
-
-            for (int i = 0; i < number_bodies; ++i) {
-                circles[i].setPosition(bodies[i].position[0], height - bodies[i].position[1]);
-                window.draw(circles[i]);
-            }
-
-            window.display();
-            sf::sleep(sf::seconds(0.5));
-        }
-    } else {
-        // element_distribution 
-        std::vector<int> element_distribution(size - 1);
-        std::vector<int> index_distribution(size - 1);
-
-        for (int i = 1; i < size; i++) {
-            element_distribution[i - 1] = distribute_bodies(i, size, number_bodies);
-        }
-        index_distribution[0] = 0;
-        for (int i = 1; i < size - 1; i++) {
-            index_distribution[i] = element_distribution[i - 1] + index_distribution[i - 1];
-        }
-
-        while (true) {
-            for (int i = index_distribution[rank - 1]; i < index_distribution[rank - 1] + element_distribution[rank - 1]; ++i) {
-                std::array<double, 2> sum_foces_i = {0, 0};
-                for (int j = 0; j < number_bodies; ++j) {
-                    if (j == i) {
-                        continue;
-                    }
-
-                    std::array<double, 2> vector_distancia = bodies[j].position - bodies[i].position;
-                    double norma_distancia = norm_of_a_vector(vector_distancia);
-                    std::array<double, 2> f_ij = (GRAVITATIONAL_CONSTANT * bodies[i].mass * bodies[j].mass * std::pow(norma_distancia, -3)) * vector_distancia;
-                    sum_foces_i += f_ij;
-                }
-
-                bodies[i].acceleration = std::pow(bodies[i].mass, -1) * sum_foces_i;
-                bodies[i].velocity += DELTA_T * bodies[i].acceleration;
-                bodies[i].position += DELTA_T * bodies[i].velocity;
-            }
-            MPI_Barrier(calculators);
-
-            MPI_Allgatherv(MPI_IN_PLACE, element_distribution[rank - 1], mpi_body_type, 
-                        bodies.data(), element_distribution.data(), index_distribution.data(), 
-                        mpi_body_type, calculators);
-
-            if (rank == 1) {
-                MPI_Send(bodies.data(), bodies.size(), mpi_body_type, 0, 0, MPI_COMM_WORLD);
-            }
-        }
+    for (std::array<sf::CircleShape, number_bodies>::iterator it = circles.begin(); it != circles.end(); it++) {
+        *it = sf::CircleShape(radius);
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int> dist(0, 255);
+        sf::Color random_color(dist(gen), dist(gen), dist(gen));
+        it->setFillColor(random_color);
     }
-    MPI_Comm_free(&calculators);
-    MPI_Type_free(&mpi_body_type);
-    MPI_Finalize();
-    return 0;
+
+    while (window.isOpen()) {
+        sf::Event event;
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed)
+                window.close();
+        }
+	
+
+        window.clear(sf::Color::Black);
+        calcular(bodies);
+	
+//	for (auto it : bodies) {
+//		std::cout << '{' << it.position[0] << ", "  << it.position[1] << '}' << std::endl;
+//	}
+//	std::cout << std::endl;
+
+	#pragma mp parallel for 
+        for (int i = 0; i < number_bodies; ++i) {
+            circles[i].setPosition(bodies[i].position[0], height - bodies[i].position[1]);
+            window.draw(circles[i]);
+        }
+
+        window.display();
+    }
 }
 
-int distribute_bodies(int rank, int size, int number_bodies) {
-    --size;
-    int div = number_bodies / size;
-    int residuo = number_bodies % size;
+void calcular(std::array<Body, number_bodies>& bodies) {
+    #pragma omp parallel for 
+    for (int i = 0; i < number_bodies; i++) {
+        std::array<double, 2> sum_forces_i = {0, 0};
+        for (int j = 0; j < number_bodies; j++) {
+            if (i == j)
+                continue;
+            
+            std::array<double, 2> vector_distancia = bodies[j].position - bodies[i].position;
+            double norma_distancia = norm_of_a_vector(vector_distancia);
+            
+	    if (norma_distancia > CUTTOF)
+		    continue;
 
-    return (residuo > 0 && rank <= residuo ? ++div : div);
+	    std::array<double , 2> f_ij = 1 * (GRAVITATIONAL_CONSTANT * bodies[i].mass * bodies[j].mass * std::pow(norma_distancia + 10, -3)) * vector_distancia;
+            sum_forces_i += f_ij;
+        }
+
+        bodies[i].acceleration = std::pow(bodies[i].mass, -1) * sum_forces_i;
+        bodies[i].velocity += DELTA_T * bodies[i].acceleration;
+        bodies[i].position += DELTA_T * bodies[i].velocity;
+    }
 }

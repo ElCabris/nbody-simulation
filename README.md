@@ -6,11 +6,9 @@ Para instalar sfml en sistemas basados en debian es suficiente ejecutando el sig
 sudo apt install libsfml-dev
 ```
 
-la implementación con mpi fracasó.
-
 Para compilar y ejecutar el programa
 ```
-g++ -fopenmp openmp_implementation.cpp src/models/body.cpp src/models/vectors_operations.cpp -lsfml-graphics -lsfml-window -lsfml-system
+g++ -fopenmp src/main.cpp src/models/body.cpp src/models/vectors_operations.cpp -lsfml-graphics -lsfml-window -lsfml-system
 ```
 ## Parámetros de la simulación
 Esta simulación permite cambiar ciertas constantes para poder llegar a la simulación deseada. Esas constantes son:
